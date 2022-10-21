@@ -1,0 +1,108 @@
+version: '3.4'
+
+networks:
+  mynetwork:
+    name: mynetwork
+    attachable: true
+
+services:
+
+  postgres:
+    container_name: idp-db
+    image: postgres:12.0
+    # volumes:
+    #   - type: bind
+    #     source: ./docker/build-context/data
+    #     target: /var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: password
+    ports:
+      - 5432:5432
+    networks:
+      - mynetwork
+
+  keycloak:
+    container_name: idp-keycloak
+    image: jboss/keycloak:15.1.0
+    environment:
+      DB_VENDOR: POSTGRES
+      DB_ADDR: postgres
+      DB_DATABASE: keycloak
+      DB_USER: keycloak
+      DB_SCHEMA: public
+      DB_PASSWORD: password
+      KEYCLOAK_USER: admin
+      KEYCLOAK_PASSWORD: password
+      # Uncomment the line below if you want to specify JDBC parameters. The parameter below is just an example, and it shouldn't be used in production without knowledge. It is highly recommended that you read the PostgreSQL JDBC driver documentation in order to use it.
+      #JDBC_PARAMS: "ssl=true"
+    ports:
+      - 8080:8080
+    depends_on:
+      - postgres
+    networks:
+      - mynetwork
+
+  nginxplus-load-balancer:
+    container_name: nginxplus_load_balancer
+    build:
+      context: ./
+      dockerfile: ./docker/docker-files/nginxplus-load-balancer/Dockerfile
+    image: nginxplus-load-balancer
+    ports:
+      - 20000:20000
+    volumes:
+      - type: bind
+        source: ./services/nginxplus-load-balancer/nginx/conf.d
+        target: /etc/nginx/conf.d/
+    networks:
+      - mynetwork
+    depends_on:
+      - nginx_plus_oidc_cluster_01
+
+  nginx_plus_oidc_cluster_01:
+    container_name: nginxplus-oidc-cluster-01
+    build:
+      context: ./
+      dockerfile: ./docker/docker-files/nginxplus-oidc-clusters/Dockerfile
+    image: nginxplus_oidc_cluster
+    ports:
+      - 21000:20000
+    volumes:
+      - type: bind
+        source: ./
+        target: /etc/nginx/conf.d/
+      - type: bind
+        source: ./services/nginxplus-oidc-clusters/nginx/test/
+        target: /etc/nginx/test/
+      - type: bind
+        source: ./services/nginxplus-oidc-clusters/content
+        target: /usr/share/nginx/html/
+    depends_on:
+      - nginx_plus_oidc_cluster_02
+    networks:
+      - mynetwork
+
+  nginx_plus_oidc_cluster_02:
+    container_name: nginxplus-oidc-cluster-02
+    build:
+      context: ./
+      dockerfile: ./docker/docker-files/nginxplus-oidc-clusters/Dockerfile
+    image: nginxplus_oidc_cluster
+    ports:
+      - 22000:20000
+    volumes:
+      - type: bind
+        source: ./
+        target: /etc/nginx/conf.d/
+      - type: bind
+        source: ./services/nginxplus-oidc-clusters/nginx/test/
+        target: /etc/nginx/test/
+      - type: bind
+        source: ./services/nginxplus-oidc-clusters/content
+        target: /usr/share/nginx/html/
+    depends_on:
+      - keycloak
+    networks:
+      - mynetwork
